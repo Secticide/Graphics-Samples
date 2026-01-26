@@ -1,5 +1,4 @@
 use windows::{
-    core::*,
     Win32::{
         Foundation::*,
         Graphics::{
@@ -9,6 +8,7 @@ use windows::{
         System::Threading,
         UI::WindowsAndMessaging::*,
     },
+    core::*,
 };
 
 use std::{mem::ManuallyDrop, ptr};
@@ -50,6 +50,7 @@ fn main() -> Result<()> {
         let wnd_class = WNDCLASSW {
             lpfnWndProc: Some(window_proc),
             lpszClassName: TITLE,
+            hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
             ..Default::default()
         };
 
@@ -101,13 +102,17 @@ fn main() -> Result<()> {
 
         // ----------------------------------------------------------------------------------------------------
 
-        let factory: Dxgi::IDXGIFactory4 = Dxgi::CreateDXGIFactory2(Dxgi::DXGI_CREATE_FACTORY_DEBUG)?;
+        let factory: Dxgi::IDXGIFactory4 =
+            Dxgi::CreateDXGIFactory2(Dxgi::DXGI_CREATE_FACTORY_DEBUG)?;
 
         // ----------------------------------------------------------------------------------------------------
 
         let swapchain_desc = Dxgi::DXGI_SWAP_CHAIN_DESC1 {
             Format: Common::DXGI_FORMAT_R8G8B8A8_UNORM,
-            SampleDesc: Common::DXGI_SAMPLE_DESC { Count: 1, Quality: 0, },
+            SampleDesc: Common::DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
             BufferUsage: Dxgi::DXGI_USAGE_RENDER_TARGET_OUTPUT,
             BufferCount: 2,
             SwapEffect: Dxgi::DXGI_SWAP_EFFECT_FLIP_DISCARD,
@@ -315,9 +320,21 @@ fn main() -> Result<()> {
         // ----------------------------------------------------------------------------------------------------
 
         let vertices = [
-            Float3 { x: 0.0, y: 0.5, z: 0.0, },
-            Float3 { x: 0.5, y: -0.5, z: 0.0, },
-            Float3 { x: -0.5, y: -0.5, z: 0.0, },
+            Float3 {
+                x: 0.0,
+                y: 0.5,
+                z: 0.0,
+            },
+            Float3 {
+                x: 0.5,
+                y: -0.5,
+                z: 0.0,
+            },
+            Float3 {
+                x: -0.5,
+                y: -0.5,
+                z: 0.0,
+            },
         ];
 
         let heap_props = Direct3D12::D3D12_HEAP_PROPERTIES {
@@ -359,7 +376,11 @@ fn main() -> Result<()> {
 
         vertex_buffer.Map(0, Some(&read_range), Some(&mut vertex_data_begin))?;
 
-        ptr::copy_nonoverlapping::<Float3>(vertices.as_ptr(), vertex_data_begin as _, vertices.len());
+        ptr::copy_nonoverlapping::<Float3>(
+            vertices.as_ptr(),
+            vertex_data_begin as _,
+            vertices.len(),
+        );
 
         vertex_buffer.Unmap(0, None);
 
