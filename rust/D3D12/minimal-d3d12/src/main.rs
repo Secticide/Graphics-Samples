@@ -14,7 +14,7 @@ use windows::{
 use std::{mem::ManuallyDrop, ptr};
 
 const TITLE: PCWSTR = windows::core::w!("Minimal D3D12 by Secticide");
-const PASSTHROUGH: &'static std::ffi::CStr = c"
+const PASSTHROUGH: &std::ffi::CStr = c"
 struct vertex_output
 {
     float4 position : SV_POSITION;
@@ -272,7 +272,7 @@ fn main() -> Result<()> {
                 BytecodeLength: fragment_shader.GetBufferSize(),
             },
             BlendState: blend_desc,
-            SampleMask: std::u32::MAX,
+            SampleMask: u32::MAX,
             RasterizerState: rasterizer_desc,
             DepthStencilState: Direct3D12::D3D12_DEPTH_STENCIL_DESC {
                 DepthEnable: false.into(),
