@@ -1,14 +1,16 @@
 # Graphics Samples
 
-## DirectX 12 (D3D12)
+I'm hoping this repository can become a place many people come to as a starting point, or to reference when starting new projects!
 
-### Minimal D3D12
+## Samples
 
-A minimal "hello triangle" reference implementation. This shows the basics of getting D3D12 setup without extra clutter. The code is entirely in the main function and is laid out such that it can be easily followed and understood.
+### Minimal (Vulkan/D3D12)
+
+A minimal "hello triangle" reference implementation. This shows the basics of getting D3D12/Vulkan setup without extra clutter. The code is entirely in the main function and is laid out such that it can be easily followed and understood.
 
 ## Improvements
 
-I'm hoping this repository can become a place many people come to as a starting point, or to reference when starting new projects. If you are a graphics programmer by trade, or have spent a great deal of time writing graphics code and see something that could be improved; feel free to open an issue or contact me directly via [JakBoulton](https://twitter.com/JakBoulton).
+If you are a graphics programmer by trade, or have spent a great deal of time writing graphics code and see something that could be improved; feel free to open an issue or contact me directly via [JakBoulton](https://twitter.com/JakBoulton).
 
 ## Credits
 
