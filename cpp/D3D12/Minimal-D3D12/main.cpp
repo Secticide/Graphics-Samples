@@ -11,6 +11,7 @@
 #include <d3dcompiler.h>
 
 #include <memory> // std::memcpy, std::size
+#include <cstring> // std::strlen
 #include <cstdlib> // std::exit
 
 // ----------------------------------------------------------------------------------------------------
@@ -18,6 +19,23 @@
 using Microsoft::WRL::ComPtr;
 
 static const wchar_t* TITLE{ L"Minimal D3D12 by Secticide" };
+static const char* PASSTHROUGH_SHADER{ R"(
+struct vertex_output
+{
+    float4 position : SV_POSITION;
+};
+
+vertex_output vert_main(float3 position : POSITION)
+{
+    vertex_output output;
+    output.position = float4(position, 1.0f);
+    return output;
+}
+
+float4 frag_main(vertex_output input) : SV_TARGET
+{
+    return float4(1.0f, 0.0f, 0.0f, 1.0f);
+})" };
 
 struct float3 { float x, y, z; };
 
@@ -30,9 +48,9 @@ void check(HRESULT hr) {
 
 // ----------------------------------------------------------------------------------------------------
 
-int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow) {
+int APIENTRY wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int) {
 
-    WNDCLASSW wnd_class{ 0, DefWindowProcW, 0, 0, 0, 0, 0, 0, 0, TITLE };
+    WNDCLASSW wnd_class{ 0, DefWindowProcW, 0, 0, 0, 0, LoadCursorW(nullptr, IDC_ARROW), 0, 0, TITLE };
 
     RegisterClassW(&wnd_class);
 
@@ -128,10 +146,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     // ----------------------------------------------------------------------------------------------------
 
     ComPtr<ID3DBlob> vertex_shader{};
-    check(D3DCompileFromFile(L"passthrough.hlsl", nullptr, nullptr, "vert_main", "vs_5_0", 0, 0, &vertex_shader, nullptr));
+    check(D3DCompile(PASSTHROUGH_SHADER, std::strlen(PASSTHROUGH_SHADER), nullptr, nullptr, nullptr, "vert_main", "vs_5_0", 0, 0, &vertex_shader, nullptr));
 
     ComPtr<ID3DBlob> fragment_shader{};
-    check(D3DCompileFromFile(L"passthrough.hlsl", nullptr, nullptr, "frag_main", "ps_5_0", 0, 0, &fragment_shader, nullptr));
+    check(D3DCompile(PASSTHROUGH_SHADER, std::strlen(PASSTHROUGH_SHADER), nullptr, nullptr, nullptr, "frag_main", "ps_5_0", 0, 0, &fragment_shader, nullptr));
 
     // ----------------------------------------------------------------------------------------------------
 
