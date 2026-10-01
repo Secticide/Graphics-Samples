@@ -1,3 +1,6 @@
 # Rust build artifacts
 **/target/
 **/Cargo.lock
+# Odin build artifacts
+odin/**/*.exe
+odin/**/*.pdb
