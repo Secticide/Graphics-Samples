@@ -109,7 +109,7 @@ fn main() -> VkResult<()> {
 
         let app_info = vk::ApplicationInfo {
             p_application_name: c"Minimal Vulkan by Secticide".as_ptr(),
-            api_version: vk::make_api_version(0, 1, 0, 0),
+            api_version: vk::make_api_version(0, 1, 3, 0),
             ..Default::default()
         };
 
@@ -190,10 +190,17 @@ fn main() -> VkResult<()> {
             ..Default::default()
         };
 
+        let features13 = vk::PhysicalDeviceVulkan13Features {
+            dynamic_rendering: vk::TRUE,
+            synchronization2: vk::TRUE,
+            ..Default::default()
+        };
+
         let device_exts = [ash::khr::swapchain::NAME.as_ptr()];
         let device = instance.create_device(
             physical_device,
             &vk::DeviceCreateInfo {
+                p_next: (&features13 as *const vk::PhysicalDeviceVulkan13Features).cast(),
                 queue_create_info_count: 1,
                 p_queue_create_infos: &queue_create_info,
                 enabled_extension_count: device_exts.len() as u32,
@@ -256,55 +263,6 @@ fn main() -> VkResult<()> {
                     .unwrap()
             })
             .collect();
-
-        // ----------------------------------------------------------------------------------------------------
-
-        let color_attachment = vk::AttachmentDescription {
-            format: vk::Format::B8G8R8A8_UNORM,
-            samples: vk::SampleCountFlags::TYPE_1,
-            load_op: vk::AttachmentLoadOp::CLEAR,
-            store_op: vk::AttachmentStoreOp::STORE,
-            stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
-            stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
-            initial_layout: vk::ImageLayout::UNDEFINED,
-            final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
-            ..Default::default()
-        };
-
-        let color_ref = vk::AttachmentReference {
-            attachment: 0,
-            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        };
-
-        let subpass = vk::SubpassDescription {
-            pipeline_bind_point: vk::PipelineBindPoint::GRAPHICS,
-            color_attachment_count: 1,
-            p_color_attachments: &color_ref,
-            ..Default::default()
-        };
-
-        let subpass_dep = vk::SubpassDependency {
-            src_subpass: vk::SUBPASS_EXTERNAL,
-            dst_subpass: 0,
-            src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            src_access_mask: vk::AccessFlags::empty(),
-            dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            ..Default::default()
-        };
-
-        let render_pass = device.create_render_pass(
-            &vk::RenderPassCreateInfo {
-                attachment_count: 1,
-                p_attachments: &color_attachment,
-                subpass_count: 1,
-                p_subpasses: &subpass,
-                dependency_count: 1,
-                p_dependencies: &subpass_dep,
-                ..Default::default()
-            },
-            None,
-        )?;
 
         // ----------------------------------------------------------------------------------------------------
 
@@ -423,7 +381,14 @@ fn main() -> VkResult<()> {
             ..Default::default()
         };
 
+        let rendering_info = vk::PipelineRenderingCreateInfo {
+            color_attachment_count: 1,
+            p_color_attachment_formats: &vk::Format::B8G8R8A8_UNORM,
+            ..Default::default()
+        };
+
         let pipeline_info = vk::GraphicsPipelineCreateInfo {
+            p_next: (&rendering_info as *const vk::PipelineRenderingCreateInfo).cast(),
             stage_count: shader_stages.len() as u32,
             p_stages: shader_stages.as_ptr(),
             p_vertex_input_state: &vertex_input_state,
@@ -433,8 +398,6 @@ fn main() -> VkResult<()> {
             p_multisample_state: &multisample_state,
             p_color_blend_state: &color_blend_state,
             layout: pipeline_layout,
-            render_pass,
-            subpass: 0,
             ..Default::default()
         };
 
@@ -443,28 +406,6 @@ fn main() -> VkResult<()> {
             .map_err(|(_, e)| e)?;
 
         let pipeline = pipelines[0];
-
-        // ----------------------------------------------------------------------------------------------------
-
-        let framebuffers: Vec<vk::Framebuffer> = img_views
-            .iter()
-            .map(|view| {
-                device
-                    .create_framebuffer(
-                        &vk::FramebufferCreateInfo {
-                            render_pass,
-                            attachment_count: 1,
-                            p_attachments: view,
-                            width,
-                            height,
-                            layers: 1,
-                            ..Default::default()
-                        },
-                        None,
-                    )
-                    .unwrap()
-            })
-            .collect();
 
         // ----------------------------------------------------------------------------------------------------
 
@@ -564,7 +505,16 @@ fn main() -> VkResult<()> {
         // ----------------------------------------------------------------------------------------------------
 
         let image_available = device.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?;
-        let render_finished = device.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?;
+
+        // One per swapchain image, as a semaphore can't be re-signaled until its image is re-acquired
+        let render_finished: Vec<vk::Semaphore> = swapchain_images
+            .iter()
+            .map(|_| {
+                device
+                    .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)
+                    .unwrap()
+            })
+            .collect();
 
         let in_flight_fence = device.create_fence(
             &vk::FenceCreateInfo {
@@ -575,6 +525,13 @@ fn main() -> VkResult<()> {
         )?;
 
         // ----------------------------------------------------------------------------------------------------
+
+        let subresource_range = vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            level_count: 1,
+            layer_count: 1,
+            ..Default::default()
+        };
 
         let wait_stage = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
         let mut is_running = true;
@@ -609,31 +566,78 @@ fn main() -> VkResult<()> {
                 },
             )?;
 
-            const CLEAR_COLOUR: [f32; 4] = [0.0, 0.2, 0.4, 1.0];
-            device.cmd_begin_render_pass(
+            let barrier = vk::ImageMemoryBarrier2 {
+                src_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                src_access_mask: vk::AccessFlags2::NONE,
+                dst_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                dst_access_mask: vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                old_layout: vk::ImageLayout::UNDEFINED,
+                new_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                image: swapchain_images[image_index as usize],
+                subresource_range,
+                ..Default::default()
+            };
+            device.cmd_pipeline_barrier2(
                 cmd_buffer,
-                &vk::RenderPassBeginInfo {
-                    render_pass,
-                    framebuffer: framebuffers[image_index as usize],
+                &vk::DependencyInfo {
+                    image_memory_barrier_count: 1,
+                    p_image_memory_barriers: &barrier,
+                    ..Default::default()
+                },
+            );
+
+            const CLEAR_COLOUR: [f32; 4] = [0.0, 0.2, 0.4, 1.0];
+            let color_attachment = vk::RenderingAttachmentInfo {
+                image_view: img_views[image_index as usize],
+                image_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                load_op: vk::AttachmentLoadOp::CLEAR,
+                store_op: vk::AttachmentStoreOp::STORE,
+                clear_value: vk::ClearValue {
+                    color: vk::ClearColorValue {
+                        float32: CLEAR_COLOUR,
+                    },
+                },
+                ..Default::default()
+            };
+            device.cmd_begin_rendering(
+                cmd_buffer,
+                &vk::RenderingInfo {
                     render_area: vk::Rect2D {
                         extent: vk::Extent2D { width, height },
                         ..Default::default()
                     },
-                    clear_value_count: 1,
-                    p_clear_values: &vk::ClearValue {
-                        color: vk::ClearColorValue {
-                            float32: CLEAR_COLOUR,
-                        },
-                    },
+                    layer_count: 1,
+                    color_attachment_count: 1,
+                    p_color_attachments: &color_attachment,
                     ..Default::default()
                 },
-                vk::SubpassContents::INLINE,
             );
 
             device.cmd_bind_pipeline(cmd_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);
             device.cmd_bind_vertex_buffers(cmd_buffer, 0, &[vertex_buffer], &[0]);
             device.cmd_draw(cmd_buffer, 3, 1, 0, 0);
-            device.cmd_end_render_pass(cmd_buffer);
+            device.cmd_end_rendering(cmd_buffer);
+
+            let barrier = vk::ImageMemoryBarrier2 {
+                src_stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                src_access_mask: vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                dst_stage_mask: vk::PipelineStageFlags2::NONE,
+                dst_access_mask: vk::AccessFlags2::NONE,
+                old_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                new_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+                image: swapchain_images[image_index as usize],
+                subresource_range,
+                ..Default::default()
+            };
+            device.cmd_pipeline_barrier2(
+                cmd_buffer,
+                &vk::DependencyInfo {
+                    image_memory_barrier_count: 1,
+                    p_image_memory_barriers: &barrier,
+                    ..Default::default()
+                },
+            );
+
             device.end_command_buffer(cmd_buffer)?;
 
             device.queue_submit(
@@ -645,7 +649,7 @@ fn main() -> VkResult<()> {
                     command_buffer_count: 1,
                     p_command_buffers: &cmd_buffer,
                     signal_semaphore_count: 1,
-                    p_signal_semaphores: &render_finished,
+                    p_signal_semaphores: &render_finished[image_index as usize],
                     ..Default::default()
                 }],
                 in_flight_fence,
@@ -655,7 +659,7 @@ fn main() -> VkResult<()> {
                 queue,
                 &vk::PresentInfoKHR {
                     wait_semaphore_count: 1,
-                    p_wait_semaphores: &render_finished,
+                    p_wait_semaphores: &render_finished[image_index as usize],
                     swapchain_count: 1,
                     p_swapchains: &swapchain,
                     p_image_indices: &image_index,
@@ -671,19 +675,17 @@ fn main() -> VkResult<()> {
         device.device_wait_idle()?;
 
         device.destroy_fence(in_flight_fence, None);
-        device.destroy_semaphore(render_finished, None);
+        for semaphore in &render_finished {
+            device.destroy_semaphore(*semaphore, None);
+        }
         device.destroy_semaphore(image_available, None);
         device.free_memory(vertex_buffer_memory, None);
         device.destroy_buffer(vertex_buffer, None);
         device.destroy_command_pool(cmd_pool, None);
-        for fb in &framebuffers {
-            device.destroy_framebuffer(*fb, None);
-        }
         device.destroy_pipeline(pipeline, None);
         device.destroy_pipeline_layout(pipeline_layout, None);
         device.destroy_shader_module(frag_module, None);
         device.destroy_shader_module(vert_module, None);
-        device.destroy_render_pass(render_pass, None);
         for view in &img_views {
             device.destroy_image_view(*view, None);
         }
